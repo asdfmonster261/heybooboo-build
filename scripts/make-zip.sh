@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # Build the flashable AnyKernel3 zip. Both images must come from the same build:
 # modules in the vendor_kernel_boot ramdisk carry symbol CRCs tied to that kernel.
 #

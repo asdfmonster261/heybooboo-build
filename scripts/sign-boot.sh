@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # Re-sign a built boot.img. Kleaf's own footer is unsigned, sized wrong, and
 # claims security_patch 2027-00-05 - not a date. Flashing that risks KeyMint
 # recording a bogus level and refusing /data afterwards.
