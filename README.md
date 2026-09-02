@@ -21,16 +21,21 @@ moved into sched.h. Reasons are in the patch headers.
 Don't pass `--lto=none`, it's already the default.
 
 	scripts/sign-boot.sh out/yogi/dist /path/to/kernel-15938155 boot-signed.img
-	scripts/make-zip.sh boot-signed.img out/yogi/dist/vendor_kernel_boot.img kernel.zip
+	scripts/make-zip.sh out/yogi/dist boot-signed.img kernel.zip
 
 The boot.img the build gives you already has an AVB footer, which is the
 misleading part: it's unsigned, sized to the wrong partition, and its
 security_patch reads 2027-00-05. There is no month 00. Flash that and KeyMint
 can record a patch level you can't get back from, and /data stops being
-readable. sign-boot.sh erases the footer and redoes it.
+readable. sign-boot.sh erases the footer, redoes it, and then checks what it
+produced, failing rather than printing the result. avbtool's own verify_image
+returns 0 on a completely unsigned image, so it can't be the whole check.
 
-boot and vendor_kernel_boot always go together and always from the same build.
-Modules in the vkb ramdisk carry CRCs tied to that kernel.
+boot and vendor_kernel_boot always go together and always from the same build,
+because modules in the vkb ramdisk carry CRCs tied to that kernel. make-zip.sh
+takes the dist directory rather than the two images for that reason, and checks
+the signed boot.img back against the one in there, so a mismatched pair won't
+package.
 
 Have the factory image downloaded before you flash anything. Don't write the
 bootloader and don't switch slots.

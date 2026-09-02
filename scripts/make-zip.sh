@@ -1,17 +1,34 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-only
-# Build the flashable AnyKernel3 zip. Both images must come from the same build:
-# modules in the vendor_kernel_boot ramdisk carry symbol CRCs tied to that kernel.
+# Build the flashable AnyKernel3 zip. vendor_kernel_boot is taken from the dist
+# directory instead of being passed in, and the signed boot.img is checked back
+# against the one in there, so the two cannot come from different builds. The
+# modules in the vkb ramdisk carry symbol CRCs tied to that kernel.
 #
-# Usage: make-zip.sh <signed-boot.img> <vendor_kernel_boot.img> <output.zip>
+# Usage: make-zip.sh <dist-dir> <signed-boot.img> <output.zip>
 
 set -eu
-BOOT=${1:?usage: make-zip.sh <boot.img> <vendor_kernel_boot.img> <out.zip>}
-VKB=${2:?}
+DIST=${1:?usage: make-zip.sh <dist-dir> <signed-boot.img> <out.zip>}
+BOOT=${2:?}
 OUT=${3:?}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
+VKB=$DIST/vendor_kernel_boot.img
 AK3_URL=https://github.com/osm0sis/AnyKernel3/archive/refs/heads/master.tar.gz
 MAGISK_URL=https://github.com/topjohnwu/Magisk/releases/download/v30.7/app-debug.apk
+
+# The signed boot.img is made outside the dist directory, so prove it came from
+# this one. Both footers record the payload size and the payload has to match.
+orig() {
+	python3 "$HERE/tools/avbtool" info_image --image "$1" 2>/dev/null |
+		sed -n 's/^Original image size:[[:space:]]*\([0-9]*\).*/\1/p'
+}
+pd=$(orig "$DIST/boot.img"); pb=$(orig "$BOOT")
+[ -n "$pd" ] && [ -n "$pb" ] || { echo "no AVB footer on $DIST/boot.img or $BOOT" >&2; exit 1; }
+if [ "$pd" != "$pb" ] ||
+   [ "$(head -c "$pd" "$DIST/boot.img" | sha256sum)" != "$(head -c "$pb" "$BOOT" | sha256sum)" ]; then
+	echo "$BOOT was not built from $DIST" >&2
+	exit 1
+fi
 
 # The footer and the AK3 guard carry the patch level separately, and after an OTA
 # they are the pair that drifts. anykernel.sh says why the guard is pinned in
