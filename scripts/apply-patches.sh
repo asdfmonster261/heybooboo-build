@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
 # Apply the vendor module patches to an extracted GPL drop. The kernel comes
 # from heybooboo-kernel; these fix modules under private/, which Google ships
 # only in the tarball.

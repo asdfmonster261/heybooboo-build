@@ -34,3 +34,7 @@ Modules in the vkb ramdisk carry CRCs tied to that kernel.
 
 Have the factory image downloaded before you flash anything. Don't write the
 bootloader and don't switch slots.
+
+GPL-2.0, since both patches derive from GPL-2.0 kernel source. `tools/avbtool`
+is MIT and keeps its own header. AnyKernel3 isn't vendored here; make-zip.sh
+fetches it at build time and the zip ships its BSD-3-Clause license alongside.
