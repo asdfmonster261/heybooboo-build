@@ -30,9 +30,11 @@ The boot.img the build gives you already has an AVB footer, which is the
 misleading part: it's unsigned, sized to the wrong partition, and its
 security_patch reads 2027-00-05. There is no month 00. Flash that and KeyMint
 can record a patch level you can't get back from, and /data stops being
-readable. sign-boot.sh erases the footer, redoes it, and then checks what it
-produced, failing rather than printing the result. avbtool's own verify_image
-returns 0 on a completely unsigned image, so it can't be the whole check.
+readable. sign-boot.sh erases that footer and redoes it, then checks the result
+and fails rather than printing it. The erase is only for a known starting state,
+since avbtool 1.4.0 re-footers over the real payload with or without it.
+avbtool's own verify_image returns 0 on a completely unsigned image, so it can't
+be the whole check.
 
 boot and vendor_kernel_boot always go together and always from the same build,
 because modules in the vkb ramdisk carry CRCs tied to that kernel. make-zip.sh
