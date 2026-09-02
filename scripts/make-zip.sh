@@ -25,6 +25,8 @@ lvl=$(sed -n 's/^supported\.patchlevels=\(.*\)$/\1/p' "$HERE/anykernel/anykernel
 	exit 1
 }
 
+"$HERE/scripts/verify-vkb.sh" "$VKB"
+
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 curl -sfL "$AK3_URL" | tar -xz -C "$work" --strip-components=1
 rm -rf "$work/.github" "$work/README.md" "$work/modules" "$work/patch" "$work/ramdisk"
