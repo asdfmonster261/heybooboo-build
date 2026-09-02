@@ -13,6 +13,18 @@ HERE=$(cd "$(dirname "$0")/.." && pwd)
 AK3_URL=https://github.com/osm0sis/AnyKernel3/archive/refs/heads/master.tar.gz
 MAGISK_URL=https://github.com/topjohnwu/Magisk/releases/download/v30.7/app-debug.apk
 
+# The footer and the AK3 guard carry the patch level separately, and after an OTA
+# they are the pair that drifts. anykernel.sh says why the guard is pinned in
+# both directions rather than left open at the bottom.
+spl=$(python3 "$HERE/tools/avbtool" info_image --image "$BOOT" 2>/dev/null |
+	sed -n "s/.*com\.android\.build\.boot\.security_patch -> '\(....-..\).*/\1/p")
+[ -n "$spl" ] || { echo "no security_patch prop in $BOOT" >&2; exit 1; }
+lvl=$(sed -n 's/^supported\.patchlevels=\(.*\)$/\1/p' "$HERE/anykernel/anykernel.sh")
+[ "$lvl" = "$spl - $spl" ] || {
+	echo "anykernel.sh allows '$lvl' but boot.img is signed $spl" >&2
+	exit 1
+}
+
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 curl -sfL "$AK3_URL" | tar -xz -C "$work" --strip-components=1
 rm -rf "$work/.github" "$work/README.md" "$work/modules" "$work/patch" "$work/ramdisk"
