@@ -20,8 +20,11 @@ moved into sched.h. Reasons are in the patch headers.
 
 Don't pass `--lto=none`, it's already the default.
 
-	scripts/sign-boot.sh out/yogi/dist /path/to/kernel-15938155 boot-signed.img
-	scripts/make-zip.sh out/yogi/dist boot-signed.img kernel.zip
+	scripts/release.sh out/yogi/dist /path/to/kernel-15938155 kernel.zip
+
+That signs the boot.img and packages the zip, and leaves kernel-boot.img beside
+it, which is what you RAM-boot with fastboot before writing anything. sign-boot.sh
+and make-zip.sh underneath it take the same arguments if you want the steps apart.
 
 The boot.img the build gives you already has an AVB footer, which is the
 misleading part: it's unsigned, sized to the wrong partition, and its
