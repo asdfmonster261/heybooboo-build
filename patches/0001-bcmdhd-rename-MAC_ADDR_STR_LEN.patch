@@ -1,0 +1,23 @@
+bcmdhd: rename MAC_ADDR_STR_LEN to avoid collision with if_ether.h
+
+6.12.92 adds MAC_ADDR_STR_LEN to include/linux/if_ether.h as (3 * ETH_ALEN - 1),
+which is 17. The driver's private copy is 18 - the same string plus its NUL - so
+the two are not interchangeable, and -Wmacro-redefined is fatal in this tree.
+
+Renaming keeps the driver's meaning. Deleting the local define instead, or
+guarding it with #ifndef, would silently shorten the length check in
+wl_android_get_p2p_dev_addr() by one byte.
+
+--- a/private/google-modules/wlan/bcmdhd/bcm4390v2/wl_android.c
++++ b/private/google-modules/wlan/bcmdhd/bcm4390v2/wl_android.c
+@@ -5508,8 +5508,8 @@
+ 	int ret;
+ 	struct ether_addr p2pdev_addr;
+ 
+-#define MAC_ADDR_STR_LEN 18
+-	if (total_len < MAC_ADDR_STR_LEN) {
++#define WL_MAC_ADDR_STR_LEN 18
++	if (total_len < WL_MAC_ADDR_STR_LEN) {
+ 		DHD_ERROR(("wl_android_get_p2p_dev_addr: buflen %d is less than p2p dev addr\n",
+ 			total_len));
+ 		return -1;

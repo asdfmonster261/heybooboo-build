@@ -1,0 +1,44 @@
+vh_sched: drop local attach_task()/attach_one_task() copies
+
+6.12.92 moves both functions out of kernel/sched/fair.c into kernel/sched/sched.h
+as static inline. The module includes that header, so its verbatim copies now
+redefine them.
+
+The kernel versions are equivalent: lockdep_assert_rq_held(rq) in place of
+lockdep_assert_held(&rq->__lock), WARN_ON_ONCE() where the copy used BUG_ON(),
+and guard(rq_lock) instead of an explicit rq_lock/rq_unlock pair. The file
+already warns that these are unmodified copies from GKI and that upstream
+changes need review; this is that review.
+
+--- a/private/google-modules/soc/gs/drivers/soc/google/vh/kernel/sched/fair.c
++++ b/private/google-modules/soc/gs/drivers/soc/google/vh/kernel/sched/fair.c
+@@ -94,28 +94,7 @@
+ #define for_each_clamp_id(clamp_id) \
+ 	for ((clamp_id) = 0; (clamp_id) < UCLAMP_CNT; (clamp_id)++)
+ 
+-static void attach_task(struct rq *rq, struct task_struct *p)
+-{
+-	lockdep_assert_held(&rq->__lock);
+-
+-	BUG_ON(task_rq(p) != rq);
+-	activate_task(rq, p, ENQUEUE_NOCLOCK);
+-	wakeup_preempt(rq, p, 0);
+-}
+-
+-/*
+- * attach_one_task() -- attaches the task returned from detach_one_task() to
+- * its new rq.
+- */
+-static void attach_one_task(struct rq *rq, struct task_struct *p)
+-{
+-	struct rq_flags rf;
+-
+-	rq_lock(rq, &rf);
+-	update_rq_clock(rq);
+-	attach_task(rq, p);
+-	rq_unlock(rq, &rf);
+-}
++/* attach_task() and attach_one_task() moved to kernel/sched/sched.h in 6.12.92 */
+ 
+ static inline u64 cfs_rq_last_update_time(struct cfs_rq *cfs_rq)
+ {
