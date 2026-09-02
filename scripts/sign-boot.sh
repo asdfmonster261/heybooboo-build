@@ -34,5 +34,5 @@ python3 "$AVBTOOL" add_hash_footer \
 	--prop "com.android.build.boot.security_patch:$SPL" \
 	--prop "com.android.build.boot.fingerprint:$FINGERPRINT"
 
-echo "signed $OUT ($(stat -c%s "$OUT") bytes)"
-python3 "$AVBTOOL" info_image --image "$OUT" | sed -n '1,8p'
+echo "signed $OUT"
+exec "$HERE/scripts/verify-boot.sh" "$OUT" "$TREE"
