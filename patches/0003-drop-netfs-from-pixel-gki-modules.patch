@@ -1,0 +1,18 @@
+constants: drop netfs from the device GKI module list
+
+CONFIG_CIFS=y selects NETFS_SUPPORT=y, which builds netfs into vmlinux and stops
+producing fs/netfs/netfs.ko. The device target's extracted_system_dlkm step reads
+PIXEL_GKI_MODULES_LIST and fails when netfs.ko is absent from the built system_dlkm,
+so drop its entry here to match. Companion to the common/gki/modules.bzl edit that
+does the same for the GKI kernel build.
+
+--- a/private/devices/google/common/constants.bzl
++++ b/private/devices/google/common/constants.bzl
+@@ -50,7 +50,6 @@
+     "drivers/virtio/virtio_pci.ko",
+     "drivers/virtio/virtio_pci_legacy_dev.ko",
+     "drivers/virtio/virtio_pci_modern_dev.ko",
+-    "fs/netfs/netfs.ko",
+     "kernel/kheaders.ko",
+     "lib/crypto/libarc4.ko",
+     "mm/zsmalloc.ko",
