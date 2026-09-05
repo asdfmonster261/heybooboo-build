@@ -20,27 +20,48 @@ moved into sched.h. Reasons are in the patch headers.
 
 Don't pass `--lto=none`, it's already the default.
 
-	scripts/release.sh out/yogi/dist /path/to/kernel-15938155 kernel.zip
+## Packaging
 
-That signs the boot.img and packages the zip, and leaves kernel-boot.img beside
-it, which is what you RAM-boot with fastboot before writing anything. sign-boot.sh
-and make-zip.sh underneath it take the same arguments if you want the steps apart.
+	scripts/release.sh out/yogi/dist/boot.img kernel.zip
 
-The boot.img the build gives you already has an AVB footer, which is the
-misleading part: it's unsigned, sized to the wrong partition, and its
-security_patch reads 2027-00-05. There is no month 00. Flash that and KeyMint
-can record a patch level you can't get back from, and /data stops being
-readable. sign-boot.sh erases that footer and redoes it, then checks the result
-and fails rather than printing it. The erase is only for a known starting state,
-since avbtool 1.4.0 re-footers over the real payload with or without it.
-avbtool's own verify_image returns 0 on a completely unsigned image, so it can't
-be the whole check.
+The zip repacks. It swaps the built kernel into the boot image already on the
+phone, with magiskboot, and writes that back, so the boot partition keeps its own
+AVB footer and its own patch level. It leaves vendor_kernel_boot alone, because
+the kernel is GKI with a frozen KMI and the stock vendor modules load against it
+unchanged. Nothing is signed and nothing is pinned, so one zip flashes on whatever
+build the device happens to be on.
 
-boot and vendor_kernel_boot always go together and always from the same build,
-because modules in the vkb ramdisk carry CRCs tied to that kernel. make-zip.sh
-takes the dist directory rather than the two images for that reason, and checks
-the signed boot.img back against the one in there, so a mismatched pair won't
-package.
+release.sh pulls the kernel out of the boot.img, runs verify-repack.sh, then
+make-zip.sh. verify-repack.sh repacks the kernel into a stock boot and checks the
+footer came through: the patch-level props match the stock boot and the image size
+tracks the new kernel. It defaults to `../yogi_boot_img/boot.img`; pass another as
+a third argument. make-zip.sh ships the raw Image plus an arm64 magiskboot and
+busybox from a pinned Magisk release, since AnyKernel3's own tools are 32-bit and
+this device is 64-bit only. magiskboot has to be v31.0 or newer: older builds
+leave the boot's hash descriptor image size stale.
+
+The zip reads the device name and the active slot from /proc/bootconfig rather
+than getprop, so it flashes from KernelFlasher and from a recovery like OrangeFox,
+where AnyKernel3's getprop path comes back empty.
+
+## The pre-signed fallback
+
+The older approach writes two complete, pre-signed images with dd instead of
+repacking. It is kept under the -dd names, plus sign-boot.sh and verify-boot.sh.
+
+	scripts/release-dd.sh out/yogi/dist /path/to/kernel-15938155 kernel.zip
+
+It signs the boot.img and packages the zip, and leaves kernel-boot.img beside it,
+which is what you RAM-boot with fastboot before writing anything. The boot.img the
+build gives you already has an AVB footer, which is the misleading part: it's
+unsigned, sized to the wrong partition, and its security_patch reads 2027-00-05.
+There is no month 00. Flash that and KeyMint can record a patch level you can't
+get back from, and /data stops being readable. sign-boot.sh erases that footer and
+redoes it, then checks the result and fails rather than printing it. avbtool's own
+verify_image returns 0 on a completely unsigned image, so it can't be the whole
+check. In this path boot and vendor_kernel_boot go together and from the same
+build, because the vkb modules carry CRCs tied to that kernel, and make-zip-dd.sh
+checks the signed boot back against the dist so a mismatched pair won't package.
 
 Have the factory image downloaded before you flash anything. Don't write the
 bootloader and don't switch slots.

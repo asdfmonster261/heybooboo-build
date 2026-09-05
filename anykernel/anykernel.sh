@@ -2,139 +2,176 @@
 
 ### AnyKernel setup
 properties() { '
-kernel.string=yogi kernel - boot + vendor_kernel_boot pair
-do.devicecheck=1
+kernel.string=yogi kernel (repack) - boot only, vendor_kernel_boot left stock
+do.devicecheck=0
 do.modules=0
 do.systemless=1
 do.cleanup=1
 do.cleanuponabort=0
-device.name1=yogi
-supported.versions=17
-supported.patchlevels=2026-08 - 2026-08
 '; } # end properties
 
-# This zip does NOT repack anything. It writes two complete, pre-signed images.
+# This zip repacks. It swaps our kernel into the device's OWN boot image and
+# writes that back, so the boot partition keeps the AVB footer it already had. It
+# ships no pre-signed image and never touches vendor_kernel_boot.
 #
-# boot on this device carries no ramdisk (ramdisk_size=0); the generic ramdisk
-# lives in init_boot. boot is a *chained* AVB partition: vbmeta declares
-# "Chain Partition descriptor: boot", so libavb loads boot's own vbmeta from
-# the end of the boot partition. The boot header's os_version field is 0,
-# so the security patch level exists only as AVB footer properties. Repacking
-# drops that footer, the bootloader then reports patch level 0, KeyMint cannot
-# unwrap the version-bound /data keys, and the device lands in recovery with
-# "Your data may be corrupt". AnyKernel3 ships no avbtool and its signer is
-# AVB v1, which this device does not use - so dump_boot/write_boot and
-# split_boot/flash_boot are all unusable here.
+# Why this is safe, when an older revision of this script insisted on the reverse:
 #
-# boot.img is therefore signed on the build host with avbtool add_hash_footer
-# and padded to the full 67108864-byte partition, footer last.
+# boot carries the security patch level only in its AVB 2.0 footer properties (the
+# boot header os_version is 0). KeyMint reads that level to unwrap the
+# version-bound /data keys, so anything that drops the footer sends the device to
+# recovery with "Your data may be corrupt". mkbootimg-from-scratch drops it, which
+# is why the pre-signed dd design (anykernel-dd.sh) existed. magiskboot repack does
+# not: it copies the footer and its props forward, and from v31.0 also syncs the
+# hash descriptor image size to the new kernel. Verified on this device, props
+# intact and /data decrypting. So we repack against whatever boot the user is on
+# and inherit their own patch level. That is why there is no patchlevel guard: the
+# level comes from their boot, there is nothing to pin.
 #
-# vendor_kernel_boot is NOT chained - it is covered by a hash descriptor in the
-# main vbmeta with an explicit image size - so it needs no footer and ships at
-# its natural size.
+# vendor_kernel_boot is left stock. The kernel is GKI with a frozen KMI, so the
+# stock vendor modules load against it unchanged (verified: modem and the full
+# module set up, zero symbol errors). Writing it is unnecessary.
 #
-# supported.patchlevels pins 2026-08 exactly, in both directions. Flashing an
-# older SPL than the keys expect breaks /data. Flashing a NEWER one binds
-# KeyMint upward and strands the stock image, which is just as bad. Rebuild and
-# re-sign for the new level after an OTA rather than flashing this zip.
+# magiskboot here is the arm64 v31.0 build. AK3 ships a 32-bit one that cannot run
+# on this 64-bit-only device; make-zip.sh swaps it in and asserts the arch.
 
 # shell variables
 BLOCK=boot;
 IS_SLOT_DEVICE=1;
 
+# In a recovery like OrangeFox the toolbox getprop is a symlink that needs
+# LD_LIBRARY_PATH, which AK3 unsets, so getprop ro.boot.slot_suffix returns empty and
+# setup_ak below aborts with "Unable to determine active slot". The slot lives in
+# /proc/bootconfig as androidboot.slot_suffix regardless. Override getprop to read boot
+# props from there before ak3-core resolves the slot; anything else falls through to the
+# real binary, which works in a booted flasher.
+getprop() {
+  local k="$1" v;
+  case "$k" in
+    ro.boot.*)
+      v=$(grep "^androidboot.${k#ro.boot.} = " /proc/bootconfig 2>/dev/null | cut -d'"' -f2);
+      [ "$v" ] && { echo "$v"; return 0; };;
+  esac;
+  /system/bin/getprop "$@" 2>/dev/null;
+}
+
 # import functions/variables and setup patching - see for reference (DO NOT REMOVE)
 . tools/ak3-core.sh;
 
-BOOTIMG=$AKHOME/boot.img;
-VKBIMG=$AKHOME/vendor_kernel_boot.img;
-BOOTSHA=f6b9fbdc656ecf1e80dcd7e3ff6a2527cd360cf2e813a45441fa4e51740c27f3;
-VKBSHA=78a532713ef9f7877d50f5da90b32702b70f81781f2aa2ffaeddf622a6388d65;
+MB=$AKHOME/tools/magiskboot;
+IMAGE=$AKHOME/Image;
+IMAGESHA=__IMAGESHA__;
 BKDIR=/data/local/tmp;
+WORK=$AKHOME/repack;
 
 sha_of() { $bb sha256sum "$1" 2>/dev/null | $bb cut -d' ' -f1; }
 
-# Both images come from one build and must be flashed together: modules loaded
-# from the vendor_kernel_boot ramdisk carry symbol CRCs tied to the kernel.
-check_img() {
-  [ -f "$1" ] || abort "  ! $2 missing from zip. Aborting.";
-  if [ "$(sha_of "$1")" != "$3" ]; then
-    abort "  ! $2 checksum mismatch - zip is corrupt or modified. Aborting.";
-  fi;
+# magiskboot returns non-error, non-zero codes for some image kinds (3 for
+# vendor_boot); a plain boot.img unpacks 0. Only 1 is a real failure.
+mb() { local rc=0; "$MB" "$@" >/dev/null 2>&1 || rc=$?; [ "$rc" != 1 ]; }
+
+# an AVB-footered image ends with a 64-byte footer whose magic is "AVBf".
+has_avb_footer() {
+  local n; n=$($bb wc -c < "$1");
+  [ "$n" -gt 64 ] || return 1;
+  [ "$($bb dd if="$1" bs=1 skip=$((n - 64)) count=4 2>/dev/null)" = "AVBf" ];
+}
+
+# AK3's own do.devicecheck reads getprop/build.prop, which is unreliable in a
+# recovery like OrangeFox: it unsets LD_LIBRARY_PATH (breaking the toolbox getprop
+# symlink), then falls back to build.prop paths that do not match the recovery
+# mount layout, and rejects a yogi as unsupported. /proc/bootconfig carries
+# androidboot.hardware with no mount, getprop or LD_LIBRARY_PATH needed anywhere.
+check_device() {
+  local dev;
+  dev=$($bb grep '^androidboot.hardware = ' /proc/bootconfig 2>/dev/null | $bb cut -d'"' -f2);
+  [ "$dev" ] || dev=$($bb sed -n 's/.*androidboot\.hardware=\([^ ]*\).*/\1/p' /proc/cmdline 2>/dev/null);
+  [ "$dev" ] || dev=$(getprop ro.product.device 2>/dev/null);
+  [ "$dev" = yogi ] || abort "  ! device is '${dev:-unknown}', not yogi. Aborting.";
 }
 
 ui_print " ";
-ui_print "  yogi kernel";
-ui_print "  writes boot AND vendor_kernel_boot";
+ui_print "  yogi kernel (repack)";
+ui_print "  swaps the kernel into your own boot, keeps its AVB footer";
+ui_print "  vendor_kernel_boot is left stock";
 ui_print " ";
 ui_print "  slot   : ${SLOT:-none}";
 
-check_img "$BOOTIMG" "boot.img" "$BOOTSHA";
-check_img "$VKBIMG" "vendor_kernel_boot.img" "$VKBSHA";
-ui_print "  images : checksums OK";
+check_device;
+ui_print "  device : yogi";
+
+[ -f "$IMAGE" ] || abort "  ! Image missing from zip. Aborting.";
+[ "$(sha_of "$IMAGE")" = "$IMAGESHA" ] || abort "  ! Image checksum mismatch - zip is corrupt or modified. Aborting.";
+ui_print "  kernel : checksum OK";
 
 # $BLOCK was resolved to the active slot's boot partition by setup_ak above.
-# Derive the vendor_kernel_boot path from it so we inherit the same by-name dir.
-VKBLOCK=$($bb dirname "$BLOCK")/vendor_kernel_boot$SLOT;
 [ -e "$BLOCK" ] || abort "  ! boot partition not found ($BLOCK). Aborting.";
-[ -e "$VKBLOCK" ] || abort "  ! vendor_kernel_boot not found ($VKBLOCK). Aborting.";
 
-# write_part <image> <block> <label> <require_exact_size>
-write_part() {
-  local img="$1" blk="$2" label="$3" exact="$4";
-  local isz psz bk wsha isha;
-  isz=$($bb wc -c < "$img");
-  psz=$($bb blockdev --getsize64 "$blk" 2>/dev/null);
+$bb rm -rf "$WORK"; $bb mkdir -p "$WORK";
 
-  if [ "$exact" = "1" ] && [ "$psz" ] && [ "$psz" != "$isz" ]; then
-    abort "  ! $label size mismatch: partition $psz vs image $isz. Aborting.";
-  fi;
+# Pull the live boot and refuse to touch it unless it carries an AVB footer.
+# Repacking a footerless boot would strip the patch level and break /data.
+$bb dd if="$BLOCK" of="$WORK/boot.img" bs=1048576 2>/dev/null || abort "  ! could not read boot. Aborting.";
+has_avb_footer "$WORK/boot.img" || abort "  ! current boot has no AVB footer - refusing to repack. Aborting.";
+BOOTSZ=$($bb wc -c < "$WORK/boot.img");
 
-  # Back up first. Slot A on this device holds an older build and no userspace
-  # under Virtual A/B, so it is not a fallback - this backup and fastboot are
-  # the only ways back.
-  bk=$BKDIR/$label-before.img;
-  if [ ! -f "$bk" ]; then
-    if $bb dd if="$blk" of="$bk" bs=1048576 2>/dev/null; then
-      ui_print "  backup : $bk";
-    else
-      ui_print "  backup : FAILED";
-      abort "  ! refusing to write $label without a backup. Aborting.";
-    fi;
+# Back up the live boot before writing. Slot A on this device holds an older build
+# with no userspace under Virtual A/B, so it is not a fallback: this backup and
+# fastboot are the only ways back.
+bk=$BKDIR/boot-before.img;
+if [ ! -f "$bk" ]; then
+  if $bb dd if="$BLOCK" of="$bk" bs=1048576 2>/dev/null; then
+    ui_print "  backup : $bk";
   else
-    ui_print "  backup : $bk (kept existing)";
+    abort "  ! refusing to write without a backup. Aborting.";
   fi;
+else
+  ui_print "  backup : $bk (kept existing)";
+fi;
 
-  ui_print "  writing $label ($isz bytes)...";
-  $bb dd if="$img" of="$blk" bs=1048576 || abort "  ! $label write failed. Aborting.";
-  $bb sync;
+# Unpack the live boot, drop our kernel in, repack. Only the kernel changes;
+# ramdisk (none here), dtb, header and footer are carried over by magiskboot.
+cd "$WORK";
+mb unpack boot.img || abort "  ! unpack failed. Aborting.";
+$bb cp -f "$IMAGE" kernel || abort "  ! could not stage kernel. Aborting.";
+mb repack boot.img new-boot.img || abort "  ! repack failed. Aborting.";
+[ -f new-boot.img ] || abort "  ! repack produced no image. Aborting.";
+has_avb_footer new-boot.img || abort "  ! repacked boot lost its AVB footer. Aborting.";
 
-  # Read back exactly as many bytes as we wrote and compare.
-  wsha=$($bb dd if="$blk" bs="$isz" count=1 2>/dev/null | $bb sha256sum | $bb cut -d' ' -f1);
-  isha=$(sha_of "$img");
-  if [ "$wsha" = "$isha" ]; then
-    ui_print "  verify : OK";
-  else
-    ui_print "  verify : MISMATCH";
-    ui_print "    restore with:";
-    ui_print "    dd if=$bk of=$blk bs=1048576";
-    abort "  ! $label verification failed. Aborting.";
-  fi;
-}
+# boot is a chained AVB partition and must fill it exactly. magiskboot pads the
+# repack to the source size, so this equals the partition; guard it anyway.
+NEWSZ=$($bb wc -c < new-boot.img);
+[ "$NEWSZ" = "$BOOTSZ" ] || abort "  ! repacked size $NEWSZ != boot $BOOTSZ. Aborting.";
 
-write_part "$BOOTIMG" "$BLOCK"   "boot"               1;
-write_part "$VKBIMG"  "$VKBLOCK" "vendor_kernel_boot" 0;
+ui_print "  writing boot ($NEWSZ bytes)...";
+$bb dd if=new-boot.img of="$BLOCK" bs=1048576 || abort "  ! boot write failed. Aborting.";
+$bb sync;
+
+# Verify our kernel actually landed: read the flashed boot back, unpack it, and
+# compare the kernel to the shipped one. Footer preservation is magiskboot's, and
+# was asserted above.
+$bb rm -rf "$WORK/verify"; $bb mkdir -p "$WORK/verify";
+$bb dd if="$BLOCK" of="$WORK/verify/boot.img" bs=1048576 2>/dev/null;
+cd "$WORK/verify";
+mb unpack boot.img || abort "  ! read-back unpack failed. Aborting.";
+if [ "$(sha_of kernel)" = "$IMAGESHA" ]; then
+  ui_print "  verify : OK";
+else
+  ui_print "  verify : MISMATCH";
+  ui_print "    restore with:";
+  ui_print "    dd if=$bk of=$BLOCK bs=1048576";
+  abort "  ! verification failed. Aborting.";
+fi;
+
+$bb rm -rf "$WORK";
 
 ui_print " ";
 ui_print "  Done. Reboot to run the new kernel.";
 ui_print " ";
-ui_print "  Backups are in $BKDIR - pull them to a PC now:";
-ui_print "    adb pull $BKDIR/boot-before.img";
-ui_print "    adb pull $BKDIR/vendor_kernel_boot-before.img";
-ui_print "  They live on /data, which is exactly what breaks if a";
-ui_print "  patch-level mismatch goes wrong.";
+ui_print "  Backup is at $bk - pull it to a PC now:";
+ui_print "    adb pull $bk";
+ui_print "  It lives on /data, which is what breaks if a boot goes wrong.";
 ui_print " ";
-ui_print "  If it does not boot, from fastboot:";
+ui_print "  If it does not boot, from fastboot flash a stock boot:";
 ui_print "    fastboot flash boot$SLOT <stock boot.img>";
-ui_print "    fastboot flash vendor_kernel_boot$SLOT <stock vendor_kernel_boot.img>";
 ui_print "  Do NOT change slots and do NOT flash the bootloader.";
 ui_print " ";

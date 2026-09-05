@@ -1,85 +1,82 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-only
-# Build the flashable AnyKernel3 zip. vendor_kernel_boot is taken from the dist
-# directory instead of being passed in, and the signed boot.img is checked back
-# against the one in there, so the two cannot come from different builds. The
-# modules in the vkb ramdisk carry symbol CRCs tied to that kernel.
+# Build the flashable AnyKernel3 zip for the repack model. It ships the kernel
+# Image (pulled out of the build's boot.img) plus arm64 v31.0 magiskboot and
+# busybox; on device, anykernel.sh repacks the Image into the user's own boot and
+# keeps that boot's AVB footer. No signing, no vendor_kernel_boot - anykernel.sh
+# explains why. The dd/pre-signed path is make-zip-dd.sh + anykernel-dd.sh.
 #
-# Usage: make-zip.sh <dist-dir> <signed-boot.img> <output.zip>
+# Usage: make-zip.sh <boot.img> <output.zip>
+#   <boot.img>  the build's boot.img; only its kernel is used, the footer is dropped
 
 set -eu
-DIST=${1:?usage: make-zip.sh <dist-dir> <signed-boot.img> <out.zip>}
-BOOT=${2:?}
-OUT=${3:?}
+BOOT=${1:?usage: make-zip.sh <boot.img> <out.zip>}
+OUT=${2:?}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-VKB=$DIST/vendor_kernel_boot.img
+[ -f "$BOOT" ] || { echo "no such boot.img: $BOOT" >&2; exit 1; }
+BOOT=$(readlink -f "$BOOT")
+OUT=$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")
+
 AK3_URL=https://github.com/osm0sis/AnyKernel3/archive/refs/heads/master.tar.gz
-MAGISK_URL=https://github.com/topjohnwu/Magisk/releases/download/v30.7/app-debug.apk
-
-# The signed boot.img is made outside the dist directory, so prove it came from
-# this one. Both footers record the payload size and the payload has to match.
-orig() {
-	python3 "$HERE/tools/avbtool" info_image --image "$1" 2>/dev/null |
-		sed -n 's/^Original image size:[[:space:]]*\([0-9]*\).*/\1/p'
-}
-pd=$(orig "$DIST/boot.img"); pb=$(orig "$BOOT")
-[ -n "$pd" ] && [ -n "$pb" ] || { echo "no AVB footer on $DIST/boot.img or $BOOT" >&2; exit 1; }
-if [ "$pd" != "$pb" ] ||
-   [ "$(head -c "$pd" "$DIST/boot.img" | sha256sum)" != "$(head -c "$pb" "$BOOT" | sha256sum)" ]; then
-	echo "$BOOT was not built from $DIST" >&2
-	exit 1
-fi
-
-# The footer and the AK3 guard carry the patch level separately, and after an OTA
-# they are the pair that drifts. anykernel.sh says why the guard is pinned in
-# both directions rather than left open at the bottom.
-spl=$(python3 "$HERE/tools/avbtool" info_image --image "$BOOT" 2>/dev/null |
-	sed -n "s/.*com\.android\.build\.boot\.security_patch -> '\(....-..\).*/\1/p")
-[ -n "$spl" ] || { echo "no security_patch prop in $BOOT" >&2; exit 1; }
-lvl=$(sed -n 's/^supported\.patchlevels=\(.*\)$/\1/p' "$HERE/anykernel/anykernel.sh")
-[ "$lvl" = "$spl - $spl" ] || {
-	echo "anykernel.sh allows '$lvl' but boot.img is signed $spl" >&2
-	exit 1
-}
-
-"$HERE/scripts/verify-vkb.sh" "$VKB"
+# v31.0 is required: it is the magiskboot that syncs the AVB hash descriptor image
+# size on repack (v30.7 left it stale). The apk carries arm64 (for the zip) and
+# x86_64 (to unpack boot.img here).
+MAGISK_URL=https://github.com/topjohnwu/Magisk/releases/download/v31.0/Magisk-v31.0.apk
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
-curl -sfL "$AK3_URL" | tar -xz -C "$work" --strip-components=1
-rm -rf "$work/.github" "$work/README.md" "$work/modules" "$work/patch" "$work/ramdisk"
+stage="$work/ak3"; mkdir -p "$stage"
 
-# AK3 ships every tool as 32-bit ARM and yogi is arm64 only, so they cannot
-# execute. anykernel.sh only ever calls busybox, so that is the only one worth
-# replacing. Taken from a pinned Magisk release rather than /data/adb/magisk so
-# the build does not need a device attached.
-curl -sfL "$MAGISK_URL" -o "$work/magisk.apk"
-unzip -o -q "$work/magisk.apk" 'lib/arm64-v8a/libbusybox.so' -d "$work/mg"
-mv "$work/mg/lib/arm64-v8a/libbusybox.so" "$work/tools/busybox"
-rm -rf "$work/magisk.apk" "$work/mg"
-chmod 755 "$work/tools/busybox"
-case "$(file -b "$work/tools/busybox")" in
-	*"ELF 64-bit"*aarch64*) ;;
-	*) echo "busybox is not arm64 - the zip would fail on device" >&2; exit 1 ;;
+# AK3 upstream, trimmed to what a repack-only zip uses.
+curl -sfL "$AK3_URL" | tar -xz -C "$stage" --strip-components=1
+rm -rf "$stage/.github" "$stage/README.md" "$stage/modules" "$stage/patch" "$stage/ramdisk"
+
+# From the Magisk apk: arm64 busybox + magiskboot for the zip, x86_64 magiskboot to
+# unpack boot.img here. AK3's own tools are 32-bit and dead on this arm64 device;
+# anykernel.sh only ever runs busybox and magiskboot, so those are the two to replace.
+apk=${MAGISK_APK:-$work/magisk.apk}
+[ -f "$apk" ] || curl -sfL "$MAGISK_URL" -o "$apk"
+unzip -o -q "$apk" \
+	'lib/arm64-v8a/libbusybox.so' \
+	'lib/arm64-v8a/libmagiskboot.so' \
+	'lib/x86_64/libmagiskboot.so' -d "$work/mg"
+mv "$work/mg/lib/arm64-v8a/libbusybox.so"    "$stage/tools/busybox"
+mv "$work/mg/lib/arm64-v8a/libmagiskboot.so" "$stage/tools/magiskboot"
+mbhost="$work/mg/lib/x86_64/libmagiskboot.so"
+chmod 755 "$stage/tools/busybox" "$stage/tools/magiskboot" "$mbhost"
+
+for pair in "busybox|$stage/tools/busybox" "magiskboot|$stage/tools/magiskboot"; do
+	n=${pair%%|*}; f=${pair#*|}
+	case "$(file -b "$f")" in
+		*"ELF 64-bit"*aarch64*) ;;
+		*) echo "$n is not arm64 - the zip would fail on device" >&2; exit 1 ;;
+	esac
+done
+
+# Pull the raw kernel Image out of the build's boot.img. magiskboot decompresses it;
+# the on-device repack recompresses it to match the user's boot. boot.img unpacks
+# with rc 0, so a missing kernel file is the real failure signal.
+( cd "$work" && "$mbhost" unpack "$BOOT" >/dev/null 2>&1 ) || true
+[ -f "$work/kernel" ] || { echo "no kernel extracted from $BOOT" >&2; exit 1; }
+case "$(file -b "$work/kernel")" in
+	*"ARM64 boot executable Image"*) ;;
+	*) echo "extracted kernel from $BOOT is not an arm64 Image" >&2; exit 1 ;;
 esac
+cp "$work/kernel" "$stage/Image"
 
-cp "$HERE/anykernel/anykernel.sh" "$work/anykernel.sh"
-cp "$BOOT" "$work/boot.img"
-cp "$VKB"  "$work/vendor_kernel_boot.img"
+# Our repack flasher, with the shipped Image's checksum stamped in so a truncated
+# download aborts instead of repacking a partial kernel.
+cp "$HERE/anykernel/anykernel.sh" "$stage/anykernel.sh"
+isha=$(sha256sum "$stage/Image" | cut -d' ' -f1)
+sed -i "s/^IMAGESHA=.*/IMAGESHA=$isha;/" "$stage/anykernel.sh"
+grep -q "^IMAGESHA=$isha;" "$stage/anykernel.sh" || { echo "failed to stamp Image checksum" >&2; exit 1; }
 
-# anykernel.sh verifies both images before writing anything; stamp in the real
-# checksums so a truncated download aborts instead of flashing a partial image.
-bsha=$(sha256sum "$work/boot.img" | cut -d' ' -f1)
-vsha=$(sha256sum "$work/vendor_kernel_boot.img" | cut -d' ' -f1)
-sed -i "s/^BOOTSHA=.*/BOOTSHA=$bsha;/; s/^VKBSHA=.*/VKBSHA=$vsha;/" "$work/anykernel.sh"
-
-python3 - "$work" "$OUT" <<'PY'
+python3 - "$stage" "$OUT" <<'PY'
 import os, sys, zipfile
 root, out = sys.argv[1], sys.argv[2]
 files=[]
 for dp,_,fns in os.walk(root):
     for fn in fns:
-        full=os.path.join(dp,fn)
-        files.append(os.path.relpath(full, root))
+        files.append(os.path.relpath(os.path.join(dp,fn), root))
 with zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED,compresslevel=9) as z:
     for rel in sorted(files):
         full=os.path.join(root,rel)
