@@ -10,26 +10,19 @@ do.cleanup=1
 do.cleanuponabort=0
 '; } # end properties
 
-# This zip repacks. It swaps our kernel into the device's OWN boot image and
-# writes that back, so the boot partition keeps the AVB footer it already had. It
-# ships no pre-signed image and never touches vendor_kernel_boot.
+# This zip repacks: it swaps the kernel into the device's OWN boot image and writes
+# that back, so the partition keeps the AVB footer it already had. No pre-signed
+# image, and vendor_kernel_boot is never touched.
 #
-# Why this is safe, when an older revision of this script insisted on the reverse:
+# boot carries the security patch level only in its AVB 2.0 footer props (the boot
+# header os_version is 0), and KeyMint reads that level to unwrap the version-bound
+# /data keys. Drop the footer and the device lands in recovery with "Your data may
+# be corrupt". mkbootimg-from-scratch drops it; magiskboot repack carries it forward
+# and from v31.0 also syncs the hash descriptor size. So there is no patchlevel
+# guard here: the level comes from the user's own boot, there is nothing to pin.
 #
-# boot carries the security patch level only in its AVB 2.0 footer properties (the
-# boot header os_version is 0). KeyMint reads that level to unwrap the
-# version-bound /data keys, so anything that drops the footer sends the device to
-# recovery with "Your data may be corrupt". mkbootimg-from-scratch drops it, which
-# is why the pre-signed dd design (anykernel-dd.sh) existed. magiskboot repack does
-# not: it copies the footer and its props forward, and from v31.0 also syncs the
-# hash descriptor image size to the new kernel. Verified on this device, props
-# intact and /data decrypting. So we repack against whatever boot the user is on
-# and inherit their own patch level. That is why there is no patchlevel guard: the
-# level comes from their boot, there is nothing to pin.
-#
-# vendor_kernel_boot is left stock. The kernel is GKI with a frozen KMI, so the
-# stock vendor modules load against it unchanged (verified: modem and the full
-# module set up, zero symbol errors). Writing it is unnecessary.
+# vendor_kernel_boot stays stock. The kernel is GKI with a frozen KMI, so the stock
+# vendor modules load against it unchanged and writing it is unnecessary.
 #
 # magiskboot here is the arm64 v31.0 build. AK3 ships a 32-bit one that cannot run
 # on this 64-bit-only device; make-zip.sh swaps it in and asserts the arch.
@@ -103,7 +96,6 @@ ui_print "  device : yogi";
 [ "$(sha_of "$IMAGE")" = "$IMAGESHA" ] || abort "  ! Image checksum mismatch - zip is corrupt or modified. Aborting.";
 ui_print "  kernel : checksum OK";
 
-# $BLOCK was resolved to the active slot's boot partition by setup_ak above.
 [ -e "$BLOCK" ] || abort "  ! boot partition not found ($BLOCK). Aborting.";
 
 $bb rm -rf "$WORK"; $bb mkdir -p "$WORK";
@@ -128,8 +120,8 @@ else
   ui_print "  backup : $bk (kept existing)";
 fi;
 
-# Unpack the live boot, drop our kernel in, repack. Only the kernel changes;
-# ramdisk (none here), dtb, header and footer are carried over by magiskboot.
+# Only the kernel changes; ramdisk (none here), dtb, header and footer are carried
+# over by magiskboot.
 cd "$WORK";
 mb unpack boot.img || abort "  ! unpack failed. Aborting.";
 $bb cp -f "$IMAGE" kernel || abort "  ! could not stage kernel. Aborting.";
@@ -146,9 +138,7 @@ ui_print "  writing boot ($NEWSZ bytes)...";
 $bb dd if=new-boot.img of="$BLOCK" bs=1048576 || abort "  ! boot write failed. Aborting.";
 $bb sync;
 
-# Verify our kernel actually landed: read the flashed boot back, unpack it, and
-# compare the kernel to the shipped one. Footer preservation is magiskboot's, and
-# was asserted above.
+# Read the flashed boot back and compare the kernel to the shipped one.
 $bb rm -rf "$WORK/verify"; $bb mkdir -p "$WORK/verify";
 $bb dd if="$BLOCK" of="$WORK/verify/boot.img" bs=1048576 2>/dev/null;
 cd "$WORK/verify";
