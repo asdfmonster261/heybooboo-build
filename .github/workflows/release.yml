@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Check out the build tooling
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Headroom, not necessity: measured peak was 59 GB of the runner's 145 GB, so the
       # tree fits without this. Kept because bazel's output grows and an LTO build would
@@ -139,7 +139,7 @@ jobs:
           spl=$(basename "$img" | sed -E 's/.*-spl([0-9-]+)\.img/\1/')
           echo "REL_SPL=$spl" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.REL_NAME }}
           path: out/*
