@@ -1,0 +1,121 @@
+# Approved ABI breaks for the heybooboo kernel.
+# Regenerate with: scripts/check-abi.sh accept <abi.report.small>
+# Every stanza here is a difference against ACK's abi.stg that we have reviewed
+# and accepted. Anything NOT here is new and fails the check.
+#
+# recorded 2026-09-12
+
+function symbol 'void tcp_done(struct sock*)' changed
+  CRC changed from 0xa23fb7a7 to 0x7b4c178a
+
+function symbol '__poll_t tcp_poll(struct file*, struct socket*, poll_table*)' changed
+  CRC changed from 0xc420bdb3 to 0xe5077ccf
+
+function symbol 'void tcp_read_done(struct sock*, size_t)' changed
+  CRC changed from 0x8fe46446 to 0xd23aba08
+
+function symbol 'int tcp_read_sock(struct sock*, read_descriptor_t*, sk_read_actor_t)' changed
+  CRC changed from 0x435063fa to 0x673f2c7e
+
+function symbol 'struct sk_buff* tcp_recv_skb(struct sock*, u32, u32*)' changed
+  CRC changed from 0xebd9809f to 0x6ed83828
+
+function symbol 'int tcp_sendmsg_locked(struct sock*, struct msghdr*, size_t)' changed
+  CRC changed from 0x4e96e03b to 0xc0a2a93a
+
+function symbol 'void tcp_sock_set_cork(struct sock*, bool)' changed
+  CRC changed from 0x6e12ddb1 to 0xb3d596d3
+
+function symbol 'void tcp_sock_set_nodelay(struct sock*)' changed
+  CRC changed from 0xa23fb7a7 to 0x7b4c178a
+
+type 'struct task_struct' changed
+  member 'union { char __kabi_ignored_0; struct sysv_sem sysvsem; }' was added
+  member 'union { char __kabi_ignored_1; struct sysv_shm sysvshm; }' was added
+  member 'u64 __kabi_reserved4' was removed
+  member 'u64 __kabi_reserved5' was removed
+  member 'u64 __kabi_reserved6' was removed
+  member 'u64 __kabi_reserved7' was removed
+  member 'union { u64 __bore_q0; struct { u64 __kabi_reserved4; }; union { }; }' was added
+  member 'union { u64 __bore_q1; struct { u64 __kabi_reserved5; }; union { }; }' was added
+  member 'union { u64 __bore_q2; struct { u64 __kabi_reserved6; }; union { }; }' was added
+  member 'union { u64 __bore_q3; struct { u64 __kabi_reserved7; }; union { }; }' was added
+
+type 'struct tcp_sock' changed
+  member 'union { u8 __kabi_ignored_0; struct { u8 fast_ack_mode:2; u8 tlp_orig_data_app_limited:1; u8 pad_unused:5; }; }' was added
+
+type 'enum tcp_ca_event' changed
+  enumerator 'CA_EVENT_TLP_RECOVERY' (6) was added
+
+type 'struct rate_sample' changed
+  byte size changed from 72 to 88
+  member 'union { bool is_acking_tlp_retrans_seq; unsigned char __kabi_ignored1; }' was added
+  member 'union { bool is_ece; unsigned char __kabi_ignored2; }' was added
+  member 'union { u32 tx_in_flight; unsigned char __kabi_ignored3; }' was added
+  member 'union { s32 lost; unsigned char __kabi_ignored4; }' was added
+  member 'union { u32 prior_lost; unsigned char __kabi_ignored5; }' was added
+
+type 'union tcp_cc_info' changed
+  byte size changed from 20 to 52
+
+type 'struct tcp_bbr_info' changed
+  byte size changed from 20 to 52
+  member 'union { struct { __u32 bbr_bw_hi_lsb; __u32 bbr_bw_hi_msb; __u32 bbr_bw_lo_lsb; __u32 bbr_bw_lo_msb; __u8 bbr_mode; __u8 bbr_phase; __u8 unused1; __u8 bbr_version; __u32 bbr_inflight_lo; __u32 bbr_inflight_hi; __u32 bbr_extra_acked; }; unsigned char __kabi_ignored1; }' was added
+
+type 'struct bindings::bindings_raw::task_struct' changed
+  member 'union bindings::bindings_raw::task_struct__bindgen_ty_1 __bindgen_anon_1' changed
+    offset changed from 27392 to 1312
+  member 'union bindings::bindings_raw::task_struct__bindgen_ty_2 __bindgen_anon_2' changed
+    offset changed from 27456 to 1376
+  member changed from 'u64 __bindgen_padding_0[3]' to 'u64 __bindgen_padding_0[0]'
+    offset changed from 1344 to 1536
+    type changed from 'u64[3]' to 'u64[0]'
+      number of elements changed from 3 to 0
+  member 'union bindings::bindings_raw::task_struct__bindgen_ty_3 __bindgen_anon_3' changed
+    offset changed from 27520 to 27392
+  member 'u64 __kabi_reserved4' was removed
+  member 'u64 __kabi_reserved5' was removed
+  member 'u64 __kabi_reserved6' was removed
+  member 'u64 __kabi_reserved7' was removed
+  member 'union bindings::bindings_raw::task_struct__bindgen_ty_4 __bindgen_anon_4' was added
+  member 'union bindings::bindings_raw::task_struct__bindgen_ty_5 __bindgen_anon_5' was added
+  member 'union bindings::bindings_raw::task_struct__bindgen_ty_6 __bindgen_anon_6' was added
+  member 'union bindings::bindings_raw::task_struct__bindgen_ty_7 __bindgen_anon_7' was added
+  member 'union bindings::bindings_raw::task_struct__bindgen_ty_8 __bindgen_anon_8' was added
+  member 'union bindings::bindings_raw::task_struct__bindgen_ty_9 __bindgen_anon_9' was added
+
+type 'union bindings::bindings_raw::task_struct__bindgen_ty_1' changed
+  member 'struct bindings::bindings_raw::task_dma_buf_info* dmabuf_info' was removed
+  member 'struct bindings::bindings_raw::task_struct__bindgen_ty_1__bindgen_ty_1 __bindgen_anon_1' was removed
+  member 'struct bindings::bindings_raw::task_struct__bindgen_ty_1__bindgen_ty_2 __bindgen_anon_2' was removed
+  member 'u8 __kabi_ignored_0' was added
+  member 'struct bindings::bindings_raw::sysv_sem sysvsem' was added
+
+type 'union bindings::bindings_raw::task_struct__bindgen_ty_2' changed
+  byte size changed from 8 to 16
+  member 'u64 __donotuse_b448672457' was removed
+  member 'struct bindings::bindings_raw::task_struct__bindgen_ty_2__bindgen_ty_1 __bindgen_anon_1' was removed
+  member 'struct bindings::bindings_raw::task_struct__bindgen_ty_2__bindgen_ty_2 __bindgen_anon_2' was removed
+  member 'u8 __kabi_ignored_1' was added
+  member 'struct bindings::bindings_raw::sysv_shm sysvshm' was added
+
+type 'union bindings::bindings_raw::task_struct__bindgen_ty_3' changed
+  member 'struct bindings::bindings_raw::task_dma_buf_info* dmabuf_info' was added
+  member 'struct bindings::bindings_raw::task_struct__bindgen_ty_3__bindgen_ty_3 __bindgen_anon_3' was removed
+
+type 'struct bindings::bindings_raw::task_struct__bindgen_ty_3__bindgen_ty_1' changed
+  byte size changed from 4 to 8
+  member 'u8 _bitfield_align_1[0]' was removed
+  member 'struct bindings::bindings_raw::__BindgenBitfieldUnit<[u8; 1]> _bitfield_1' was removed
+  member 'u8 __bindgen_padding_0[3]' was removed
+  member 'u64 __kabi_reserved1' was added
+
+type 'struct bindings::bindings_raw::task_struct__bindgen_ty_3__bindgen_ty_2' changed
+  byte size changed from 8 to 0
+  member 'u64 __kabi_reserved3' was removed
+  member 'struct bindings::bindings_raw::__BindgenUnionField<bindings::bindings_raw::task_struct__bindgen_ty_3__bindgen_ty_2__bindgen_ty_1> __bindgen_anon_1' was added
+  member 'struct bindings::bindings_raw::__BindgenUnionField<bindings::bindings_raw::task_struct__bindgen_ty_3__bindgen_ty_2__bindgen_ty_2> __bindgen_anon_2' was added
+  member 'struct bindings::bindings_raw::__BindgenUnionField<bindings::bindings_raw::task_struct__bindgen_ty_3__bindgen_ty_2__bindgen_ty_3> __bindgen_anon_3' was added
+  member 'struct bindings::bindings_raw::__BindgenUnionField<bindings::bindings_raw::task_struct__bindgen_ty_3__bindgen_ty_2__bindgen_ty_4> __bindgen_anon_4' was added
+  member 'u8 bindgen_union_field[0]' was added
+
