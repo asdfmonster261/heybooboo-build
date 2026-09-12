@@ -12,13 +12,16 @@
 # values - the point of the model is that the level comes from the user's boot.
 # (verify-boot.sh, the pinned/crypto checker, is for the dd/pre-signed path.)
 #
-# Usage: verify-repack.sh <boot.img> [stock-boot.img]
-#   stock defaults to the project's yogi_boot_img/boot.img
+# Usage: verify-repack.sh <boot.img> <stock-boot.img>
+#   The stock boot is required on purpose. It used to default to the project's
+#   yogi_boot_img/boot.img, which goes stale the moment an OTA lands: the gate would
+#   then assert preservation against last release's patch level and still say pass.
+#   release.sh fetches a current one with fetch-stock-boot.sh.
 
 set -u
-OURS=${1:?usage: verify-repack.sh <boot.img> [stock-boot.img]}
+OURS=${1:?usage: verify-repack.sh <boot.img> <stock-boot.img>}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-STOCK=${2:-$HERE/../yogi_boot_img/boot.img}
+STOCK=${2:?usage: verify-repack.sh <boot.img> <stock-boot.img>}
 AVBTOOL=${AVBTOOL:-$HERE/tools/avbtool}
 MAGISK_URL=https://github.com/topjohnwu/Magisk/releases/download/v31.0/Magisk-v31.0.apk
 

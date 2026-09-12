@@ -6,6 +6,10 @@
 # release is release-dd.sh.
 #
 # Usage: release.sh <boot.img> <output.zip> [stock-boot.img]
+#   Without a stock boot it fetches the newest one from Google's OTA, so the gate
+#   always runs against the current patch level. The patch level is then read back out
+#   of that image and printed, because it belongs in the release notes: the zip works
+#   on any patch level, but a published boot.img is pinned to this one.
 
 set -eu
 BOOT=${1:?usage: release.sh <boot.img> <out.zip> [stock-boot.img]}
@@ -19,7 +23,15 @@ work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 curl -sfL https://github.com/topjohnwu/Magisk/releases/download/v31.0/Magisk-v31.0.apk -o "$work/magisk.apk"
 export MAGISK_APK="$work/magisk.apk"
 
-"$HERE/scripts/verify-repack.sh" "$BOOT" ${STOCK:+"$STOCK"}
+if [ -z "$STOCK" ]; then
+  STOCK="$work/stock-boot.img"
+  "$HERE/scripts/fetch-stock-boot.sh" "$STOCK" boot
+fi
+
+"$HERE/scripts/verify-repack.sh" "$BOOT" "$STOCK"
 "$HERE/scripts/make-zip.sh" "$BOOT" "$OUT"
 
+SPL=$(python3 "$HERE/tools/avbtool" info_image --image "$STOCK" 2>/dev/null \
+  | sed -n "s/.*security_patch -> '\([0-9-]*\)'.*/\1/p" | head -1)
 echo "release: $OUT"
+echo "  gated against stock patch level: ${SPL:-unknown}"
