@@ -34,10 +34,11 @@ jobs:
       - name: Check out the build tooling
         uses: actions/checkout@v4
 
-      # The ACK tree is ~32 GB, 19 GB of it toolchain prebuilts, against roughly 14 GB
-      # free on a stock runner. Done inline rather than with a disk-cleanup action: this
-      # job signs nothing but does publish images people flash, so every third-party
-      # action is trust extended for no real gain.
+      # Headroom, not necessity: measured peak was 59 GB of the runner's 145 GB, so the
+      # tree fits without this. Kept because bazel's output grows and an LTO build would
+      # need far more, and it costs a minute. Done inline rather than with a cleanup
+      # action because this job publishes images people flash, so each third-party
+      # action is trust extended for very little.
       - name: Make room
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
@@ -94,6 +95,13 @@ jobs:
           grep -q "echo '-heybooboo-g$SHORT'" build/kernel/kleaf/impl/stamp.bzl
           grep -q "export SOURCE_DATE_EPOCH=$SDE" build/kernel/kleaf/impl/stamp.bzl
 
+      # Deliberately uncached. kleaf runs the whole kernel compile inside ONE bazel
+      # action, so a --disk_cache entry is keyed on that action's inputs, and a release
+      # is by definition a new commit: it would miss every time. Measured 1290 s with a
+      # 1256 s critical path, so it is one serial chain rather than a parallelism
+      # problem, and more cores would not move it much either. Caching the ~6 min sync
+      # instead would need release-asset chunking to beat the 10 GB cache limit, which
+      # is a lot of machinery for six minutes.
       - name: Build the GKI kernel
         working-directory: gki
         run: tools/bazel build //common:kernel_aarch64_gki_artifacts
