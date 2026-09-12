@@ -12,7 +12,10 @@
 # values - the point of the model is that the level comes from the user's boot.
 # (verify-boot.sh, the pinned/crypto checker, is for the dd/pre-signed path.)
 #
-# Usage: verify-repack.sh <boot.img> <stock-boot.img>
+# Usage: verify-repack.sh <boot.img> <stock-boot.img> [keep-repacked.img]
+#   With a third argument the repacked image is kept there on success. It is the same
+#   image the assertions just ran against, so what gets published is what was gated,
+#   rather than a second repack nobody checked.
 #   The stock boot is required on purpose. It used to default to the project's
 #   yogi_boot_img/boot.img, which goes stale the moment an OTA lands: the gate would
 #   then assert preservation against last release's patch level and still say pass.
@@ -22,6 +25,7 @@ set -u
 OURS=${1:?usage: verify-repack.sh <boot.img> <stock-boot.img>}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 STOCK=${2:?usage: verify-repack.sh <boot.img> <stock-boot.img>}
+KEEP=${3:-}
 AVBTOOL=${AVBTOOL:-$HERE/tools/avbtool}
 MAGISK_URL=https://github.com/topjohnwu/Magisk/releases/download/v31.0/Magisk-v31.0.apk
 
@@ -75,5 +79,16 @@ want "padded to partition"        "$(field 'Image size' "$infoN")" "$(field 'Ima
 rt="$work/rt"; mkdir -p "$rt"; ( cd "$rt" && "$MB" unpack "$rp/new.img" >/dev/null 2>&1 ) || true
 want "our kernel landed" "$(sha256sum "$rt/kernel" 2>/dev/null | cut -d' ' -f1)" "$oursha"
 
-if [ $rc -eq 0 ]; then echo "pass"; else echo "fail"; fi
+if [ $rc -eq 0 ]; then
+	echo "pass"
+	# this script runs without -e on purpose, and a failing command on the right of
+	# || would not trip it anyway, so check the copy explicitly rather than printing
+	# success over a cp that did not happen.
+	if [ -n "$KEEP" ]; then
+		cp "$rp/new.img" "$KEEP" || { printf '  FAIL  could not write %s\n' "$KEEP"; exit 1; }
+		echo "  kept the gated image: $KEEP"
+	fi
+else
+	echo "fail"
+fi
 exit $rc
