@@ -15,7 +15,12 @@ OUT=${2:?}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 [ -f "$BOOT" ] || { echo "no such boot.img: $BOOT" >&2; exit 1; }
 BOOT=$(readlink -f "$BOOT")
-OUT=$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")
+# Absolutising via cd looks harmless but fails open: if the directory is missing the
+# subshell yields nothing and OUT becomes /<basename>, which then tries to write to the
+# filesystem root. Check it first.
+outdir=$(dirname "$OUT")
+[ -d "$outdir" ] || { echo "no such output directory: $outdir" >&2; exit 1; }
+OUT=$(cd "$outdir" && pwd)/$(basename "$OUT")
 
 AK3_URL=https://github.com/osm0sis/AnyKernel3/archive/refs/heads/master.tar.gz
 # v31.0 is required: it is the magiskboot that syncs the AVB hash descriptor image
