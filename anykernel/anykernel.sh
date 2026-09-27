@@ -1,8 +1,8 @@
-### AnyKernel3 script - yogi (Pixel 11 Pro Fold, Tensor G6 / malibu)
+### AnyKernel3 script - Pixel 11 (Tensor G6 / malibu)
 
 ### AnyKernel setup
 properties() { '
-kernel.string=yogi kernel (repack) - boot only, vendor_kernel_boot left stock
+kernel.string=Pixel 11 (malibu) kernel (repack) - boot only, vendor_kernel_boot left stock
 do.devicecheck=0
 do.modules=0
 do.systemless=1
@@ -72,25 +72,29 @@ has_avb_footer() {
 # AK3's own do.devicecheck reads getprop/build.prop, which is unreliable in a
 # recovery like OrangeFox: it unsets LD_LIBRARY_PATH (breaking the toolbox getprop
 # symlink), then falls back to build.prop paths that do not match the recovery
-# mount layout, and rejects a yogi as unsupported. /proc/bootconfig carries
-# androidboot.hardware with no mount, getprop or LD_LIBRARY_PATH needed anywhere.
+# mount layout, and rejects a yogi as unsupported. /proc/bootconfig carries the
+# boot props with no mount, getprop or LD_LIBRARY_PATH needed anywhere.
+#
+# Gate on the platform, not a device list: the kernel is GKI for the malibu KMI,
+# so any Tensor G6 board runs it, and its vendor modules stay stock either way.
 check_device() {
-  local dev;
-  dev=$($bb grep '^androidboot.hardware = ' /proc/bootconfig 2>/dev/null | $bb cut -d'"' -f2);
-  [ "$dev" ] || dev=$($bb sed -n 's/.*androidboot\.hardware=\([^ ]*\).*/\1/p' /proc/cmdline 2>/dev/null);
-  [ "$dev" ] || dev=$(getprop ro.product.device 2>/dev/null);
-  [ "$dev" = yogi ] || abort "  ! device is '${dev:-unknown}', not yogi. Aborting.";
+  local plat;
+  plat=$($bb grep '^androidboot.hardware.platform = ' /proc/bootconfig 2>/dev/null | $bb cut -d'"' -f2);
+  [ "$plat" ] || plat=$($bb sed -n 's/.*androidboot\.hardware\.platform=\([^ ]*\).*/\1/p' /proc/cmdline 2>/dev/null);
+  [ "$plat" ] || plat=$(getprop ro.boot.hardware.platform 2>/dev/null);
+  [ "$plat" = malibu ] || abort "  ! platform is '${plat:-unknown}', not malibu (Pixel 11). Aborting.";
+  DEVICE=$($bb grep '^androidboot.hardware = ' /proc/bootconfig 2>/dev/null | $bb cut -d'"' -f2);
 }
 
 ui_print " ";
-ui_print "  yogi kernel (repack)";
+ui_print "  Pixel 11 (malibu) kernel (repack)";
 ui_print "  swaps the kernel into your own boot, keeps its AVB footer";
 ui_print "  vendor_kernel_boot is left stock";
 ui_print " ";
 ui_print "  slot   : ${SLOT:-none}";
 
 check_device;
-ui_print "  device : yogi";
+ui_print "  device : ${DEVICE}";
 
 [ -f "$IMAGE" ] || abort "  ! Image missing from zip. Aborting.";
 [ "$(sha_of "$IMAGE")" = "$IMAGESHA" ] || abort "  ! Image checksum mismatch - zip is corrupt or modified. Aborting.";
